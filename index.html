@@ -110,6 +110,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .chip{font-size:12px;border:1px solid var(--line);border-radius:12px;padding:2px 4px 2px 10px;background:var(--soft)}
 .chip button{border:none;background:none;padding:0 6px;font-size:14px;color:var(--mut);cursor:pointer}
 .sev-alta{color:var(--down);border-color:var(--down)}.sev-media{color:#8a5a00;border-color:#c79a3a}.sev-info{color:var(--mut);border-color:#ccc}
+
+.slot .gd{margin-top:8px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:14px;border:1px solid #CFCAC3;background:#fff;color:var(--carb);display:inline-flex;align-items:center;gap:6px}
+.slot .gd:hover{border-color:#4285F4;color:#1a56c4}
+#gd-status{margin:12px 0 0}#gd-status button{font-size:11px;padding:2px 8px;margin-left:6px;font-weight:500}
 @media print{.panel,#busy{display:none!important}}
 
 #pwa-bar{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px}
@@ -128,7 +132,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
     <h1>Informe Ejecutivo de Remuneraciones</h1>
     <div class="sub">Comparación de dos Libros de Remuneraciones · por centro de costo, cuenta y trabajador</div>
   </div>
-  <div><div class="sub" style="text-align:right" id="meta"></div><div id="pwa-bar"><span id="pwa-ver">Versión 1.2.0</span><button id="btn-install" hidden>⬇ Instalar aplicación</button></div></div>
+  <div><div class="sub" style="text-align:right" id="meta"></div><div id="pwa-bar"><span id="pwa-ver">Versión 1.3.0</span><button id="btn-install" hidden>⬇ Instalar aplicación</button></div></div>
 </header>
 
 <div id="pwa-upd">Hay una versión nueva de la herramienta. <button class="pri" onclick="location.reload()" style="margin-left:8px;padding:4px 10px;font-size:12px">Actualizar ahora</button></div>
@@ -165,7 +169,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
     <button id="btn-swap" title="Intercambiar mes anterior y actual">⇄ Intercambiar</button>
   </div>
   <div id="msg"></div>
-  <p class="note">Formato esperado: export "Libro Abierto Remuneraciones" de Softland (fila "Mes a procesar" y encabezado con FICHA, RUT, NOMBRE, CARGO, CENTRO COSTO…). Los archivos se procesan en tu navegador; no se envían a ningún servidor.</p>
+  <p class="note">Formato esperado: export "Libro Abierto Remuneraciones" de Softland (fila "Mes a procesar" y encabezado con FICHA, RUT, NOMBRE, CARGO, CENTRO COSTO…). Los archivos se procesan en tu navegador; no se envían a ningún servidor. Con "Desde Google Drive" el archivo se descarga directo de Google Drive a este navegador (solo cuentas @nortrans.cl).</p>
 </div>
 
 <div id="report" hidden>
@@ -896,7 +900,7 @@ function init(){
   $('btn-xlsx').onclick=()=>act(async()=>{ ensure(); const buf=await buildExcel(D); download(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Comparacion_LR_${tag()}.xlsx`); },'Generando Excel (puede tardar unos segundos)…');
   $('btn-ppt').onclick=()=>act(async()=>{ ensure(); const P=buildPpt(D); const blob=await P.write({outputType:'blob'}); download(blob,`Informe_Remuneraciones_${tag()}.pptx`); },'Generando presentación…');
   $('btn-print').onclick=()=>{ ensure(); if($('report').hidden){ render(D); renderExtras(D); } window.print(); };
-  initExtras(); drawEvoList();
+  initExtras(); drawEvoList(); initDrive();
   refreshButtons();
 }
 document.addEventListener('DOMContentLoaded',init);
@@ -1273,6 +1277,100 @@ function initExtras(){
 function drawEvoList(){
   const L=$('evo-list'); AUX.extra.sort((a,b)=>(a.book.month.year*12+a.book.month.idx)-(b.book.month.year*12+b.book.month.idx));
   L.innerHTML=AUX.extra.length?AUX.extra.map((e,i)=>`<span class="chip">${esc(e.book.month.label)} · ${e.book.rows.length} fichas <button title="Quitar" onclick="AUX.extra.splice(${i},1);drawEvoList();D=null;document.getElementById('report').hidden=true;event.stopPropagation()">×</button></span>`).join(''):'<span class="mut" style="font-size:12px">Sin períodos adicionales cargados.</span>';
+}
+
+/* ===================== Google Drive (solo cuentas @nortrans.cl) ===================== */
+const GDRIVE = {
+  clientId: '385867398492-6l8v4bcevr7k63q2acf05s7f47483e1h.apps.googleusercontent.com',
+  apiKey: 'AIzaSyCGCrRpIc1aesPLn67MZZ01TNFf0OWSnh4',
+  appId: '385867398492',
+  domain: 'nortrans.cl',
+  scope: 'https://www.googleapis.com/auth/drive.file'
+};
+const GD = { token:null, exp:0, email:null, tc:null, libs:null };
+const gdAvailable = () => /^https?:$/.test(location.protocol);
+function gdLoadScript(src){ return new Promise((ok,ko)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=ok; s.onerror=()=>ko(new Error('No se pudo cargar '+src)); document.head.appendChild(s); }); }
+function gdLibs(){
+  if(!GD.libs) GD.libs=(async()=>{
+    if(!navigator.onLine) throw new Error('Sin conexión a internet: Google Drive no está disponible. Puedes cargar los archivos desde el computador.');
+    if(!(window.google&&google.accounts&&google.accounts.oauth2)) await gdLoadScript('https://accounts.google.com/gsi/client');
+    if(!window.gapi) await gdLoadScript('https://apis.google.com/js/api.js');
+    await new Promise((ok,ko)=>gapi.load('picker',{callback:ok,onerror:()=>ko(new Error('No se pudo cargar el selector de Google Drive'))}));
+  })().catch(e=>{ GD.libs=null; throw e; });
+  return GD.libs;
+}
+function gdToken(interactive=true){
+  if(GD.token && Date.now()<GD.exp-60000) return Promise.resolve(GD.token);
+  return new Promise((ok,ko)=>{
+    GD.tc=google.accounts.oauth2.initTokenClient({ client_id:GDRIVE.clientId, scope:GDRIVE.scope, hd:GDRIVE.domain, prompt:GD.email?'':'select_account',
+      callback: async r=>{
+        if(r.error){ ko(new Error(r.error==='access_denied'?'Acceso cancelado.':'Google no autorizó el acceso ('+r.error+').')); return; }
+        GD.token=r.access_token; GD.exp=Date.now()+(+r.expires_in||3600)*1000;
+        try{
+          const u=await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)',{headers:{Authorization:'Bearer '+GD.token}}).then(x=>x.json());
+          const em=(u.user&&u.user.emailAddress||'').toLowerCase();
+          if(!em.endsWith('@'+GDRIVE.domain)){ gdSignOut(); ko(new Error(`Solo se permiten cuentas @${GDRIVE.domain}${em?' (se intentó con '+em+')':''}.`)); return; }
+          GD.email=em; gdStatus();
+        }catch(e){}
+        ok(GD.token);
+      },
+      error_callback: e=>ko(new Error(e&&e.type==='popup_closed'?'Se cerró la ventana de inicio de sesión.':e&&e.type==='popup_failed_to_open'?'El navegador bloqueó la ventana emergente de Google. Permite ventanas emergentes para este sitio.':'No se pudo iniciar sesión con Google.'))
+    });
+    GD.tc.requestAccessToken();
+  });
+}
+function gdSignOut(){ try{ if(GD.token) google.accounts.oauth2.revoke(GD.token,()=>{}); }catch(e){} GD.token=null; GD.exp=0; GD.email=null; gdStatus(); }
+function gdStatus(){
+  const el=$('gd-status'); if(!el) return;
+  el.innerHTML = GD.email ? `Google Drive: <b>${esc(GD.email)}</b> <button type="button" id="gd-out">Cerrar sesión</button>` : `Google Drive: sin sesión (solo cuentas @${GDRIVE.domain})`;
+  const b=$('gd-out'); if(b) b.onclick=gdSignOut;
+}
+const GD_MIMES=['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-excel','application/vnd.ms-excel.sheet.macroEnabled.12','text/csv','application/vnd.google-apps.spreadsheet'];
+function gdPick(multi){
+  return new Promise((ok,ko)=>{
+    const P=google.picker;
+    const mine=new P.DocsView(P.ViewId.DOCS).setMimeTypes(GD_MIMES.join(',')).setIncludeFolders(true).setSelectFolderEnabled(false).setMode(P.DocsViewMode.LIST);
+    const shared=new P.DocsView(P.ViewId.DOCS).setMimeTypes(GD_MIMES.join(',')).setIncludeFolders(true).setSelectFolderEnabled(false).setEnableDrives(true).setMode(P.DocsViewMode.LIST);
+    const recent=new P.DocsView(P.ViewId.RECENTLY_PICKED);
+    let b=new P.PickerBuilder().setAppId(GDRIVE.appId).setOAuthToken(GD.token).setDeveloperKey(GDRIVE.apiKey)
+      .setLocale('es').setOrigin(location.protocol+'//'+location.host).setTitle(multi?'Elige uno o más archivos':'Elige el archivo')
+      .addView(mine).addView(shared).addView(recent).enableFeature(P.Feature.SUPPORT_DRIVES)
+      .setCallback(d=>{ if(d.action===P.Action.PICKED) ok(d.docs||[]); else if(d.action===P.Action.CANCEL) ok([]); });
+    if(multi) b=b.enableFeature(P.Feature.MULTISELECT_ENABLED);
+    b.build().setVisible(true);
+  });
+}
+async function gdDownload(doc){
+  const isSheet=doc.mimeType==='application/vnd.google-apps.spreadsheet';
+  const url=isSheet?`https://www.googleapis.com/drive/v3/files/${doc.id}/export?mimeType=${encodeURIComponent(GD_MIMES[0])}`:`https://www.googleapis.com/drive/v3/files/${doc.id}?alt=media&supportsAllDrives=true`;
+  const r=await fetch(url,{headers:{Authorization:'Bearer '+GD.token}});
+  if(!r.ok) throw new Error(`No se pudo descargar "${doc.name}" desde Drive (error ${r.status}).`);
+  const blob=await r.blob(); let name=doc.name||'archivo.xlsx'; if(isSheet && !/\.xlsx$/i.test(name)) name+='.xlsx';
+  return new File([blob],name,{type:isSheet?GD_MIMES[0]:(doc.mimeType||blob.type)});
+}
+async function gdToSlot(slot){
+  const inp=slot.querySelector('input[type=file]'); const multi=inp.hasAttribute('multiple');
+  $('msg').innerHTML='';
+  try{
+    busy('Conectando con Google Drive…'); await wait(); await gdLibs();
+    busy(null); await gdToken();
+    const docs=await gdPick(multi); if(!docs.length) return;
+    const files=[];
+    for(const d of docs){ busy(`Descargando ${d.name} desde Google Drive…`); await wait(); files.push(await gdDownload(d)); }
+    busy(null);
+    const dt=new DataTransfer(); files.forEach(f=>dt.items.add(f)); inp.files=dt.files; inp.dispatchEvent(new Event('change',{bubbles:true}));
+  }catch(e){ busy(null); $('msg').innerHTML=`<span class="err">${esc(e.message||e)}</span>`; }
+}
+function initDrive(){
+  if(!gdAvailable()) return;
+  document.querySelectorAll('.slot').forEach(slot=>{
+    if(slot.querySelector('.gd')) return;
+    const b=document.createElement('button'); b.type='button'; b.className='gd'; b.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="#0F9D58" d="M8.3 3h7.4l6.3 10.8-3.7 6.4H5.7L2 13.8z" opacity=".0"/><path fill="#4285F4" d="M5.7 20.2 9.4 13.8H22l-3.7 6.4z"/><path fill="#0F9D58" d="M8.3 3 2 13.8l3.7 6.4 6.3-10.8z"/><path fill="#F4B400" d="M15.7 3H8.3L15 14.6 22 13.8z"/></svg> Desde Google Drive';
+    b.title='Elegir el archivo desde Google Drive (cuentas @'+GDRIVE.domain+')';
+    b.onclick=e=>{ e.preventDefault(); e.stopPropagation(); gdToSlot(slot); };
+    slot.appendChild(b);
+  });
+  const st=document.createElement('div'); st.id='gd-status'; st.className='note'; const btns=document.querySelector('.panel .btns'); btns.parentNode.insertBefore(st,btns); gdStatus();
 }
 </script>
 <script>
