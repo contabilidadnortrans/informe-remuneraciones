@@ -1,11 +1,11 @@
-// Informe Remuneraciones Nortrans — service worker (v1.3.0-872c8f8f)
-const CACHE='nortrans-lr-1.3.0-872c8f8f';
+// Informe Remuneraciones Nortrans — service worker (v1.4.0-187f5eb8)
+const CACHE='nortrans-lr-1.4.0-187f5eb8';
 const FILES=['./','./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png','./icon-maskable-512.png','./apple-touch-icon.png'];
 self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate',e=>{ e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())); });
 self.addEventListener('fetch',e=>{
   if(e.request.method!=='GET') return;
-  const url=new URL(e.request.url); if(url.origin!==location.origin) return;
+  const url=new URL(e.request.url); if(url.origin!==location.origin) return; if(/\.(mp4|webm)$/i.test(url.pathname)||e.request.headers.has('range')) return;
   // red primero (para recibir actualizaciones), caché si no hay conexión
   e.respondWith(fetch(e.request).then(r=>{ const cp=r.clone(); caches.open(CACHE).then(c=>c.put(e.request,cp)); return r; }).catch(()=>caches.match(e.request).then(m=>m||caches.match('./index.html'))));
 });
